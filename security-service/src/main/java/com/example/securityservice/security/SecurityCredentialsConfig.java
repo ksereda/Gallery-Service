@@ -29,7 +29,7 @@ public class SecurityCredentialsConfig extends WebSecurityConfigurerAdapter {
 		     // make sure we use stateless session; session won't be used to store user's state.
 	            .sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS)
 	        .and()
-	            // handle an authorized attempts 
+	         // handle an authorized attempts
 	            .exceptionHandling().authenticationEntryPoint((req, rsp, e) -> rsp.sendError(HttpServletResponse.SC_UNAUTHORIZED))
 	        .and()
 		    // Add a filter to validate user credentials and add token in the response header
