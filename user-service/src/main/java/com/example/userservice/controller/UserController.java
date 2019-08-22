@@ -1,10 +1,8 @@
 package com.example.userservice.controller;
 
 import com.example.userservice.model.Bucket;
-import com.example.userservice.model.Employee;
 import com.example.userservice.service.ServiceFeignClient;
 import com.example.userservice.service.TestService;
-import com.netflix.hystrix.contrib.javanica.annotation.HystrixCommand;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
 import org.springframework.ui.Model;
@@ -30,9 +28,6 @@ public class UserController {
 
     @RequestMapping("/")
     public String home() {
-        // This is useful for debugging
-        // When having multiple instance of gallery service running at different ports.
-        // We load balance among them, and display which instance received the request.
         return "Hello from User-Service running at port: " + env.getProperty("local.server.port");
     }
 

@@ -5,6 +5,7 @@ import com.example.galleryservice.model.Bucket;
 import com.example.galleryservice.payload.ErrorResponse;
 import com.example.galleryservice.repository.BucketRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.env.Environment;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -22,7 +23,15 @@ import java.util.List;
 public class BucketController {
 
     @Autowired
+    private Environment env;
+
+    @Autowired
     private BucketRepository bucketRepository;
+
+    @RequestMapping("/")
+    public String home() {
+        return "Hello from Gallery-Service running at port: " + env.getProperty("local.server.port");
+    }
 
     @GetMapping(path = "/show")
     public Flux<Bucket> getAllEmployeesList() {
