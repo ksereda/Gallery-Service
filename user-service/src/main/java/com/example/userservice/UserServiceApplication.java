@@ -9,7 +9,9 @@ import org.springframework.cloud.netflix.eureka.EnableEurekaClient;
 import org.springframework.cloud.netflix.hystrix.dashboard.EnableHystrixDashboard;
 import org.springframework.cloud.openfeign.EnableFeignClients;
 import org.springframework.context.annotation.Bean;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.reactive.function.client.WebClient;
 
 @SpringBootApplication
 @EnableDiscoveryClient
@@ -27,6 +29,12 @@ public class UserServiceApplication {
 	@LoadBalanced   // Load balance between service instances running at different ports.
 	public RestTemplate restTemplate() {
 		return new RestTemplate();
+	}
+
+	// for using WebClient
+	public @Bean
+	WebClient webClient() {
+		return WebClient.builder().clientConnector(new ReactorClientHttpConnector()).baseUrl("http://localhost:8081").build();
 	}
 
 }

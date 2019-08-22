@@ -105,7 +105,7 @@ public class BucketController {
     // Get all Bucket from the database (every 1 second you will receive 1 record from the DB)
     @GetMapping(value = "/stream/buckets/delay", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<Bucket> streamAllBucketsDelay() {
-        return bucketRepository.findAll().delayElements(Duration.ofSeconds(1));
+        return bucketRepository.findAll().delayElements(Duration.ofSeconds(2));
     }
 
     // Exception Handling Examples (These can be put into a @ControllerAdvice to handle exceptions globally)
