@@ -10,7 +10,7 @@ spring:
         native:
           search-locations:
 #            file://PATH_TO_MICROSERVICES_PROJECT/ms-config-properties/{application}/{profile},
-            /home/ks/IdeaProjects/Gallery-Service/config-properties/{application}/{profile},
+            /home/ks/IdeaProjects/Gallery-Service/ms-config-properties/{application}/{profile},
 ---
 spring:
   profiles: git
@@ -20,4 +20,4 @@ spring:
         git:
           uri: https://github.com/ksereda/Gallery-Service/
           search-paths:
-            - "config-properties/{application}/{profile}"
+            - "ms-config-properties/{application}/{profile}"
