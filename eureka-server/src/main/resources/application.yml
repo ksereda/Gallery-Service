@@ -13,3 +13,63 @@ eureka:
   server:
     eviction-interval-timer-in-ms: 50000
     wait-time-in-ms-when-sync-empty: 5
+
+---
+
+# FOR EUREKA REPLICAS EXAMPLE
+
+
+#spring:
+#  profiles: default
+#  application:
+#    name: eureka-server
+#
+#server:
+#  port: ${PORT:8761}
+#
+#eureka:
+#  client:
+#    register-with-eureka: false
+#    fetch-registry: false
+#    instance-info-replication-interval-seconds: 10
+#    serviceUrl:
+#      defaultZone: http://${eureka.instance.hostname}:${server.port}/eureka/
+#  server:
+#    eviction-interval-timer-in-ms: 50000
+#    wait-time-in-ms-when-sync-empty: 5
+#  instance:
+#    hostname: my-eureka-server.com
+#
+#---
+#
+#spring:
+#  profiles: united-states
+#  application:
+#    name: eureka-server-clustered
+#server:
+#  port: 9001
+#eureka:
+#  instance:
+#    hostname: my-eureka-server-us.com
+#  client:
+#    registerWithEureka: true
+#    fetchRegistry: true
+#    serviceUrl:
+#      defaultZone: http://my-eureka-server-fr.com:9002/eureka/
+#
+#---
+#
+#spring:
+#  profiles: france
+#  application:
+#    name: eureka-server-clustered
+#server:
+#  port: 9002
+#eureka:
+#  instance:
+#    hostname: my-eureka-server-fr.com
+#  client:
+#    registerWithEureka: true
+#    fetchRegistry: true
+#    serviceUrl:
+#      defaultZone: http://my-eureka-server-us.com:9001/eureka/
