@@ -1,9 +1,14 @@
 spring:
+  cloud:
+    config:
+      discovery:
+        enabled: true
+        service-id: config-server
   application:
     name: gallery-service
-  data:
-    mongodb:
-      uri: mongodb://localhost:27017/gallerydb
+#  data:
+#    mongodb:
+#      uri: mongodb://localhost:27017/gallerydb
 
 server:
   port: 8081
