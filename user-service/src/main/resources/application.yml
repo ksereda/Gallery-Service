@@ -1,9 +1,14 @@
 spring:
   application:
     name: user-service
-  data:
-    mongodb:
-      uri: mongodb://localhost:27017/gallerydb
+#  data:
+#    mongodb:
+#      uri: mongodb://localhost:27017/gallerydb
+  cloud:
+    config:
+      discovery:
+        enabled: true
+        service-id: config-server
 
 server:
   port: 8082

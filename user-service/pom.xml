@@ -23,6 +23,8 @@
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 		<java.version>1.8</java.version>
 		<spring-cloud.version>Finchley.M9</spring-cloud.version>
+<!--		<spring-cloud-services.version>1.5.0.RELEASE</spring-cloud-services.version>-->
+<!--		<spring-cloud.version>Dalston.SR4</spring-cloud.version>-->
 	</properties>
 
 	<dependencies>
@@ -31,9 +33,21 @@
 			<artifactId>spring-boot-starter-web</artifactId>
 		</dependency>
 		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-actuator</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.cloud</groupId>
+			<artifactId>spring-cloud-starter-config</artifactId>
+		</dependency>
+		<dependency>
 			<groupId>org.springframework.cloud</groupId>
 			<artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
 		</dependency>
+<!--		<dependency>-->
+<!--			<groupId>org.springframework.cloud</groupId>-->
+<!--			<artifactId>spring-cloud-starter-eureka</artifactId>-->
+<!--		</dependency>-->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-data-rest</artifactId>
