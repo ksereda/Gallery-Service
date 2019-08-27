@@ -25,3 +25,15 @@ management:
     web:
       exposure:
         include: hystrix.stream
+
+movie-service:
+  ribbon:
+    eureka:
+      enabled: true
+    ServerListRefreshInterval: 1000
+
+#movie-service:
+#  ribbon:
+#    listOfServers: localhost:8085,localhost:8086
+#    eureka:
+#      enabled: true
