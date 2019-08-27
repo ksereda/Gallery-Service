@@ -1,6 +1,11 @@
 spring:
   application:
-    name: user-service
+    name: zuul-service
+  cloud:
+    config:
+      discovery:
+        enabled: true
+        service-id: ms-config-server
 
 server:
   port: 8766
@@ -12,21 +17,4 @@ eureka:
   instance:
     preferIpAddress: true
 
-zuul:
-  routes:
-    auth-service:
-      # By default, all requests to gallery service for example will start with: "/gallery/"
-      # What will be sent to the gallery service is what comes after the path defined,
-      # So, if request is "/gallery/view/1", gallery service will get "/view/1".
-      # In case of auth, we need to pass the "/auth/" in the path to auth service. So, set strip-prefix to false
-      strip-prefix: false
-      sensitive-headers: Cookie,Set-Cookie  # Exclude authorization from sensitive headers
-      path: /auth/**   # Map path to auth service
-      service-id: security-service
-    gallery-service:
-      path: /gallery/**  # Map paths to gallery service
-      service-id: gallery-service
-    user-service:
-      path: /users/**    # Map paths to user service
-      service-id: user-service
 
