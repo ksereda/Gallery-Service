@@ -8,7 +8,7 @@
 	<version>0.0.1-SNAPSHOT</version>
 	<name>gallery-service</name>
 
-	<description>Demo project for Spring Boot</description>
+	<description>Gallery Service</description>
 
 	<parent>
 		<groupId>org.springframework.boot</groupId>

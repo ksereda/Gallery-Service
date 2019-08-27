@@ -14,3 +14,43 @@ eureka:
       defaultZone: ${EUREKA_URI:http://localhost:8761/eureka}
   instance:
     preferIpAddress: true
+
+---
+
+# FOR REPLICAS EXAMPLE
+
+
+#spring:
+#  application:
+#    name: gallery-service
+#  data:
+#    mongodb:
+#      uri: mongodb://localhost:27017/gallerydb
+#
+#server:
+#  port: 8081
+#
+## Items that apply to ALL profiles:
+#eureka:
+#  client:
+#    fetchRegistry: true
+#    serviceUrl:
+#      #      defaultZone: ${EUREKA_URI:http://localhost:8761/eureka}
+#      defaultZone: http://my-eureka-server-us.com:9001/eureka
+#  instance:
+#    preferIpAddress: true
+#    appname: gallery-service  # ==> This is a instance of ABC-SERVICE
+#
+#---
+#
+#spring:
+#  profiles: gallery-service-replica01
+#eureka:
+#  instance:
+#    appname: gallery-service  # ==> This is a instance of gallery-service
+#  client:
+#    fetchRegistry: true
+#    serviceUrl:
+#      defaultZone: http://my-eureka-server-us.com:9001/eureka
+#server:
+#  port: 8001
