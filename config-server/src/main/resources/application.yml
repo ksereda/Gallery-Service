@@ -1,0 +1,23 @@
+spring:
+  profiles:
+    active: native
+---
+spring:
+  profiles: native
+  cloud:
+    config:
+      server:
+        native:
+          search-locations:
+#            file://PATH_TO_MICROSERVICES_PROJECT/ms-config-properties/{application}/{profile},
+            /home/ks/IdeaProjects/Gallery-Service/config-properties/{application}/{profile},
+---
+spring:
+  profiles: git
+  cloud:
+    config:
+      server:
+        git:
+          uri: https://github.com/ksereda/Gallery-Service/
+          search-paths:
+            - "config-properties/{application}/{profile}"
