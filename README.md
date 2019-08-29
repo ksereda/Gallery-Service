@@ -705,9 +705,11 @@ ____
     
     }
 
-Смотрите, здесь мы указываем имя сервиса, к которому хотим обратиться (в аннотации), затем указываем, что в случае ошибки (недоступнсоти сервиса gallery-service или базы данных) у нас отработает наш кастомный Fallback класс с какой-то нашей кастомной логикой.
+Смотрите, здесь мы указываем имя сервиса, к которому хотим обратиться (в аннотации), затем указываем, что в случае ошибки (недоступнсоти сервиса `gallery-service` или базы данных) у нас отработает наш кастомный Fallback класс с какой-то нашей кастомной логикой.
 
-В самой реализации Feign мы должны использовать GsonEncoder и GsonDecoder - для этого добавить зависимости в pom.
+Feign Client нативно интегрирован с `Hystrix`, поэтому нам явно не надо указывать реализацию. Но позже мы разберем ее отдельно, для понимания.
+
+В самой реализации Feign мы должны использовать `GsonEncoder` и `GsonDecoder` - для этого добавить зависимости в `pom`.
 
 Во всей этой неразберихе у нас вызывается в итоге метод `getAllEmployeesList`
 
@@ -722,7 +724,7 @@ ____
     
 Сам путь также должен быть идентичным.
 
-Идем в наш gallery-service и видим вызываемый нами метод на получение всех данных
+Идем в наш `gallery-service` и видим вызываемый нами метод на получение всех данных
 
         @GetMapping(path = "/show")
         public Flux<Bucket> getAllEmployeesList() {
@@ -733,7 +735,7 @@ ____
  
     http://localhost:8082/getAllDataFromGalleryService
     
-на нашем user-service, он посмотрит на аннотацию @FeignClient(name = “gallery-service”) и увидит, что там указан сервис `gallery-service`, он пойдет в Eureka Server, спросит про `gallery-service`, Eureka Server скажет ему где он находится и Feign Client по этому же URL в BucketController вызовет метод 
+на нашем user-service, он посмотрит на аннотацию `@FeignClient(name = “gallery-service”)` и увидит, что там указан сервис `gallery-service`, он пойдет в Eureka Server, спросит про `gallery-service`, Eureka Server скажет ему где он находится и Feign Client по этому же URL в BucketController вызовет метод 
 
         @GetMapping(path = "/show")
         public Flux<Bucket> getAllEmployeesList() {
@@ -747,4 +749,40 @@ ____
 
 ### RestTemplate
 
+Для коммуникации червисов через RestTemplate используется метод 
+
+    @GetMapping("/data")
+    public String data(){
+        return service.data();
+    }
+    
+в том же UserController у user-service.
+
+Для этого мы создали TestService 
+
+        @Autowired
+        private RestTemplate template;
+    
+        @HystrixCommand(fallbackMethod = "failed")
+        public String data() {
+            String response = template.getForObject("http://gallery-service/data", String.class);
+            LOG.log(Level.INFO, response);
+            return response;
+        }
+    
+        public String failed() {
+            String error = "Service is not available now. Please try later";
+            LOG.log(Level.INFO, error);
+            return error;
+        }
+
+Здесь мы также определили Fallback метод в случае какого-либо сбоя со стороны вызывающего сервиса.
+
+Здест просто при помощи RestTemplate мы используем метод getForObject в котором передаем адрес и необходимый нам URL.
+
+____
+
+### WebClient
+
+Посколько Feign Client по умолчанию не дружит с реактивщиной, используем известный WebClient.
 
