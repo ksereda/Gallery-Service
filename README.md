@@ -475,6 +475,49 @@ WebFlux по умолчанию использует `Netty`.
 Реактивное приложение, это когда приложение само извещает нас об изменении своего состояния. Не мы делаем запрос и проверяем, а не изменилось ли там что-то, а приложение само нам сигнализирует. 
 Ну и конечно эти события, эти сигналы мы соответственно можем обрабатывать.
 
+Для начала надо понять, что же такое Push и Pull коллекции, т.к. эти понятия тесно связаны друг с другом.
+
+- Pull - коллекция (аналог - массив): в ней есть данные, которые мы можем получить по запросу, предварительно обработав их как нам хочется.
+
+- Push - полная противоположность: изначально в ней нет данных, но как только они появятся, она нам сообщит об этом. Во время этого мы также можем делать с ней что хотим и как только в коллекции появятся значения, она выполнит все наши фильтры (которые мы на нее навесили) и выдаст нам результат.
+
+Push коллекция как-бы "состоит" из новой сущности Observable.
+
+Это и есть коллекция, которая будет рассылать уведомления об изменении своего состояния.
+
+Существует еще одно понятие - `Observer`.
+
+Он может подписаться на событие объекта и выполнять какие либо действия с полученным результатом.
+
+У одного `Subject` может быть много подписчиков.
+
+Во всех реактивных библиотеках есть встроенные инструменты для превращения стандартных ивентов в Observables (для преобразования событий в реактивные потоки).
+
+Спецификация для реактивного подхода `Spring WebFlux`:
+
+    https://github.com/reactive-streams/reactive-streams-jvm/blob/v1.0.1/README.md#specification
+
+##### Основные концепции:
+
+В новом подходе у нас есть два основных класса для работы в реактивном режиме:
+
+- Mono
+
+Класс Mono нужен для работы с единственным объектом.
+
+- Flux
+
+Данный класс схож с Mono, но предоставляет возможность асинхронной работы со множеством объектов:
+
+`Flux` и `Mono` реализуют Publisher интерфейс из спецификации Reactive Streams.
+
+Также можно унаследовать `MongoReactRepository`.
+
+Если заглянуть в интерфейс `ReactiveMongoRepository`, то можно увидеть, что нам возвращаются объекты, обернутые в классы `Mono` и `Flux`.
+Это значит, что при каком-либо обращении в БД, мы не получаем сразу же результат. Вместо этого мы получаем поток данных `Publisher`, из которого можно получить данные по мере готовности, а точнее он сам нам их отдаст по мере готовности.
+
+Новый поток не нужен, так как текущий поток не блокируется!
+
 ##### Основные приемущества:
 
 - Реактивность дает слабую связанность.
@@ -784,5 +827,254 @@ ____
 
 ### WebClient
 
-Посколько Feign Client по умолчанию не дружит с реактивщиной, используем известный WebClient.
+Посколько `Feign Client` по умолчанию не дружит с реактивщиной, используем известный WebClient.
 
+`WebClient`, представленный в Spring 5, является неблокирующим клиентом с поддержкой Reactive Streams.
+Он является частью `Spring 5` под названием `Spring WebFlux`. 
+
+Для его использования надо включить модуль spring-webflux в проект.
+
+Он был создан как часть модуля `Spring Web Reactive` и будет заменять классический `RestTemplate` в этих сценариях. Он по протоколу HTTP/1.1.
+
+Для тестирования конечных точек среда Spring 5 WebFlux поставляется с классом `WebTestClient`. 
+`WebTestClient` - это тонкая оболочка вокруг `WebClient`. Вы можете использовать его для выполнения запросов и проверки ответов.
+
+`WebTestClient` связывается с приложением WebFlux, используя ложный запрос и ответ, или может тестировать любой веб-сервер через соединение HTTP.
+
+
+Главный вопрос - заменяет ли WebClient традиционный RestTemplate ?
+Да, он был разработан для этого, но RestTemplate будет продолжать существовать в Spring Framework в обозримом будущем.
+
+Основным отличием является то, что RestTemplate выполняет синхронную блокировку. 
+Это означает, что вызов, выполненный с использованием RestTemplate, должен ждать, пока ответ не вернется, чтобы продолжить.
+
+Поскольку WebClient является асинхронным, вызову REST не нужно ждать ответа. Вместо этого, когда есть ответ, будет предоставлено уведомление об этом.
+
+
+##### Пару слов про gRPC:
+Компания Google выпустила gRPC, который работает поверх HTTP.2, но это не совсем так :)
+На самом деле он yа каждое действие отправляет обычный POST запрос (HTTP).
+Тем самым происходит неэффективное использование ресурсов.
+
+Т.е. другими словами это просто обертка поверх HTTP.2
+                 
+Принцип работы:
+
+Он использует прокси `(envoy)` между браузером и сервером и шлёт обычные HTTP POST запросы на прокси а прокси уже шлёт HTTP.2 на сервер.
+
+Он прост в разработке и легко поддерживается, но его минус в том, что при больших нагрузках на сервер он не может справиться с ними и это не лучшее решение в реактивной системе, когда вам очень важен перворманс.
+Netflix с AWS уже столкнулись с данной проблемой при использовании gRPC при построении новой системы 3 года назад. 
+
+Поэтому был выпущен новый протокол - `RSocket`.
+RSocket - это будущее для коммуникации микросервисов в реактивной системе, когда очень важен перворманс и имеются большие обьемы данных.
+
+О нем чуть позже.
+
+
+Продолжим разбираться с WebClient.
+
+В UserController метод
+
+        @GetMapping(value = "/getDataByWebClient",produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+        public Flux<Bucket> getDataByWebClient() {
+            return webClientService.getDataByWebClient();
+        }
+        
+Создаем отдельный сервис для этого `WebClientService`
+
+В котором собираем WebClient в конструкторе
+
+     public WebClientService() {
+            this.webClient = WebClient.builder()
+                    .baseUrl(API_BASE_URL)
+                    .defaultHeader(HttpHeaders.CONTENT_TYPE, API_MIME_TYPE)
+                    .defaultHeader(HttpHeaders.USER_AGENT, USER_AGENT)
+                    .build();
+        }
+
+И собственно вызываем сам наш метод
+
+    public Flux<Bucket> getDataByWebClient() {
+        return webClient
+                .get()
+                .uri("/stream/buckets/delay")
+                .exchange()
+                .flatMapMany(clientResponse -> clientResponse.bodyToFlux(Bucket.class));
+    }
+    
+    
+##### Создание экземпляра WebClient:
+
+- WebClient можно создать при помощи create
+
+    
+    WebClient webClient = WebClient.create("https://api.github.com");
+
+- Или при помощи builder
+
+
+        public WebClientService() {
+            this.webClient = WebClient.builder()
+                    .baseUrl(API_BASE_URL)
+                    .defaultHeader(HttpHeaders.CONTENT_TYPE, API_MIME_TYPE)
+                    .defaultHeader(HttpHeaders.USER_AGENT, USER_AGENT)
+                    .build();
+        }
+        
+
+
+В нашем примере мы используем WebClient для получения данных из базы данных через первый сервис (gallery-service) в реактивной среде.
+
+    public Flux<Bucket> getDataByWebClient() {
+        return webClient
+                .get()
+                .uri("/stream/buckets/delay")
+                .exchange()
+                .flatMapMany(clientResponse -> clientResponse.bodyToFlux(Bucket.class));
+    }
+   
+##### Дополнительные параметры
+ 
+- мы можем указать какой именно запрос мы отправляем параметром
+    
+    
+        .get()
+        .post()
+        .put()
+        .delete()
+        .options()
+        .head()
+        .patch()
+        
+- предоставление URL мы передаем через 
+
+      
+        .uri
+        
+для создания URI запроса вы можете также использовать URIBuilder
+
+    .uri(uriBuilder -> uriBuilder.path("/user/repos")
+                        .queryParam("sort", "updated")
+                        .queryParam("direction", "desc")
+                        .build())
+                        
+        
+- мы можем установить тело запроса (Если шлем POST запрос).
+
+
+Если мы хотим установить тело запроса - есть два доступных способа:
+ 
+- Первый способ - заполнить его `BodyInserter` или делегировать эту работу `Publisher`
+
+  
+    .body(BodyInserters.fromPublisher(Mono.just("data")), String.class);
+ 
+  
+`BodyInserter` - это интерфейс, отвечающий за заполнение тела `ReactiveHttpOutputMessage`.
+`BodyInserters` содержит методы , чтобы создать BodyInserter из Object, Publisher, Resource, FormData, и MultipartData и т.д. 
+  
+`Publisher` - это реактивный компонент, отвечающий за предоставление потенциально неограниченного числа последовательных элементов.
+  
+- Второй способ - это метод `body()`.
+ 
+с помощью одного объекта
+  
+    .body(BodyInserters.fromObject("data"));
+   
+c помощью `MultiValueMap`
+   
+       LinkedMultiValueMap map = new LinkedMultiValueMap();
+       
+       map.add("key1", "value1");
+       map.add("key2", "value2");
+   
+       BodyInserter<MultiValueMap, ClientHttpRequest> inserter2
+        = BodyInserters.fromMultipartData(map);
+    
+    
+Если у вас есть тело запроса в форме a Mono или a Flux, то вы можете напрямую передать его body() методу в WebClient.
+
+Если у вас есть действительное значение вместо Publisher (Flux/Mono), вы можете использовать `syncBody()`.
+
+- мы можем установить заголовки, куки, приемлемые типы носителей.
+
+Существует дополнительная поддержка наиболее часто используемых заголовков, таких как __ «If-None-Match», «If-Modified-Since», «Accept», «Accept-Charset».
+
+     .header(HttpHeaders.CONTENT__TYPE, MediaType.APPLICATION__JSON__VALUE)
+    .accept(MediaType.APPLICATION__JSON, MediaType.APPLICATION__XML)
+    .acceptCharset(Charset.forName("UTF-8"))
+    .ifNoneMatch("** ")
+    .ifModifiedSince(ZonedDateTime.now())
+
+##### Фильтры
+
+WebClient поддерживает фильтрацию запросов с использованием `ExchangeFilterFunction`. 
+Вы можете использовать функции фильтра для перехвата и изменения запроса любым способом. 
+
+Например, вы можете использовать функцию фильтра для добавления Authorization заголовка к каждому запросу или для регистрации деталей каждого запроса.
+   
+Вы можете добавить эту логику в функцию фильтра при создании WebClient.
+
+    WebClient webClient = WebClient.builder()
+            .baseUrl(MY_REPO_API_BASE_URL)
+            .defaultHeader(HttpHeaders.CONTENT_TYPE, GITHUB_V3_MIME_TYPE)
+            .filter(ExchangeFilterFunctions
+                    .basicAuthentication(username, token))
+            .build();   
+
+Теперь вам не нужно добавлять Authorization заголовок в каждом запросе. 
+Функция фильтра будет перехватывать каждый запрос WebClient и добавлять этот заголовок.
+
+##### Получение ответа
+
+Для этого есть методы `exchange` или `retrieve`
+
+Меттод `retrieve()` - является самым простым способом получить тело ответа. 
+
+Но, если вы хотите иметь больше контроля над ответом, вы можете использовать `exchange()` метод, который имеет доступ ко всему ClientResponse, включая все заголовки и тело.
+
+
+##### Обработка ошибок WebClient
+
+Метод `retrieve()`, в WebClient бросает `WebClientResponseException` всегда, когда был получен ответ с кодом состоянии 4хх или 5хх.
+
+    public Flux<MyRepo> listGithubRepositories() {
+         return webClient.get()
+                .uri("/user/repos?sort={sortField}&direction={sortDirection}", 
+                         "updated", "desc")
+                .retrieve()
+                .onStatus(HttpStatus::is4xxClientError, clientResponse ->
+                    Mono.error(new MyCustomClientException())
+                )
+                .onStatus(HttpStatus::is5xxServerError, clientResponse ->
+                    Mono.error(new MyCustomServerException())
+                )
+                .bodyToFlux(MyRepo.class);
+    
+    }
+    
+Метод `exchange()` не генерирует исключения в случае ответов 4xx или 5xx. Вам необходимо самостоятельно проверить коды состояния и обрабатывать их так, как вы хотите.
+
+
+Вы также можете проверить статусы состояний и передать какое-то свое кастомное выполнение для их реализаций
+
+        public Flux<Bucket> getDataByWebClient() {
+            return webClient
+                    .get()
+                    .uri("/getAll")
+                    .retrieve()
+                    .onStatus(HttpStatus::is4xxClientError, clientResponse ->
+                            Mono.error(new RuntimeException("4xx"))
+                    )
+                    .onStatus(HttpStatus::is5xxServerError, clientResponse ->
+                            Mono.error(new RuntimeException("5xx"))
+                    )
+                    .onStatus(HttpStatus::is3xxRedirection, clientResponse ->
+                            Mono.error(new MyCustomServerException())
+                    )
+                    .onStatus(HttpStatus::isError, clientResponse ->
+                            Mono.error(new MyCustomServerException())
+                    )
+                    .bodyToFlux(Bucket.class);
+        }
+        
