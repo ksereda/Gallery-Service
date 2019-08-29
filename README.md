@@ -908,7 +908,7 @@ RSocket - это будущее для коммуникации микросер
 - WebClient можно создать при помощи create
 
     
-    WebClient webClient = WebClient.create("https://api.github.com");
+    WebClient webClient = WebClient.create("https://localhost:8654/getData");
 
 - Или при помощи builder
 
