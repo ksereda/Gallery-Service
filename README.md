@@ -475,7 +475,7 @@ WebFlux по умолчанию использует `Netty`.
 Реактивное приложение, это когда приложение само извещает нас об изменении своего состояния. Не мы делаем запрос и проверяем, а не изменилось ли там что-то, а приложение само нам сигнализирует. 
 Ну и конечно эти события, эти сигналы мы соответственно можем обрабатывать.
 
-##### основные приемущества:
+##### Основные приемущества:
 
 - Реактивность дает слабую связанность.
 
@@ -632,5 +632,119 @@ ____
 Но здесь Lombok мы не сможем применить, т.к. WebClient с ним не особо дружит.
 
 В этом примере я намешал всего и постарался показать все фишки вместе. Не пугайтесь :) 
+
+____
+
+### Feign Client
+
+Это простой и гибкий http-клиент, который нативно интегрирован с `Ribbon`.
+
+`Feign` использует интерфейсы аннотированные `@FeignClient` чтобы генерировать API запросы и мапить ответ на Java классы.
+
+Он шлет http запросы другим сервисам.
+ 
+Его особенность в том, что нам не нужно знать где и на каком порту находится какой-то сервис.
+
+Мы просто говорим Feign клиенту, иди к “Васе” и получи у него всех пользователей. Далее Feign обращается к Eureka Server и спрашивает где находится “Вася”.
+
+Если “Вася” регистрировался в Eureka Server, то Eureka будет всё знать о “Васе” (где он находится, на каком порту, его URL и т.д.).
+
+Вам нужно только описать, как получить доступ к удаленной службе API, указав такие детали, как URL, тело запроса и ответа, принятые заголовки и т. д. Клиент Feign позаботится о деталях реализации.
+
+`Netflix` предоставляет `Feign` в качестве абстракции для вызовов на основе REST, благодаря которым микросервисы могут связываться друг с другом, но разработчикам не нужно беспокоиться о внутренних деталях REST.
+
+Нужно указать аннотацию `@EnableFeignClients` над основным классом.
+
+Теперь у нашего `user-service` будут уже 3 аннотации
+
+    @SpringBootApplication
+    @EnableEurekaClient
+    @EnableFeignClients
+
+
+На интерфейс ставим аннотацию `@FeignClient(name = “Вася”)` и указываем имя того сервиса, который нам нужен (в пояснении я описывал сервис под названием “Вася”). 
+В том сервисе будет выполняться некая логика по работе с базой и настройки коннекта к базе, или получение всех пользователей и т.д.
+
+Более детально про замечательный Feign Client я написал в статье:
+
+    https://medium.com/@kirill.sereda/spring-cloud-netflix-feign-%D0%BF%D0%BE-%D1%80%D1%83%D1%81%D1%81%D0%BA%D0%B8-7b8272e8e110
+    
+В нашем примере в `UserController` мы указали путь
+
+        @RequestMapping(path = "/getAllDataFromGalleryService")
+        public List<Bucket> getDataByFeignClient(Model model) {
+            List<Bucket> list = ServiceFeignClient.FeignHolder.create().getAllEmployeesList();
+            return list;
+        }
+        
+Теперь нам необходимо сделать сервис с бизнес логикой.
+Делаем интерфейс `ServiceFeignClient`
+
+    @FeignClient(name = "gallery-service", url = "http://localhost:8081/", fallback = Fallback.class)
+    public interface ServiceFeignClient {
+    
+        class FeignHolder {
+            public static ServiceFeignClient create() {
+                return HystrixFeign.builder().encoder(new GsonEncoder()).decoder(new GsonDecoder()).target(ServiceFeignClient.class, "http://localhost:8081/", new FallbackFactory<ServiceFeignClient>() {
+                    @Override
+                    public ServiceFeignClient create(Throwable throwable) {
+                        return new ServiceFeignClient() {
+                            @Override
+                            public List<Bucket> getAllEmployeesList() {
+                                System.out.println(throwable.getMessage());
+                                return null;
+                            }
+                        };
+                    }
+                });
+            }
+        }
+    
+        @RequestLine("GET /show")
+        List<Bucket> getAllEmployeesList();
+    
+    }
+
+Смотрите, здесь мы указываем имя сервиса, к которому хотим обратиться (в аннотации), затем указываем, что в случае ошибки (недоступнсоти сервиса gallery-service или базы данных) у нас отработает наш кастомный Fallback класс с какой-то нашей кастомной логикой.
+
+В самой реализации Feign мы должны использовать GsonEncoder и GsonDecoder - для этого добавить зависимости в pom.
+
+Во всей этой неразберихе у нас вызывается в итоге метод `getAllEmployeesList`
+
+    @RequestLine("GET /show")
+    List<Bucket> getAllEmployeesList();
+    
+Внимание!
+
+Метод должен иметь возвращаемое значение и по сигнатуре быть точно таким же как и метод на gallery-service, который мы вызываем, а именно метод по пути
+
+    /show
+    
+Сам путь также должен быть идентичным.
+
+Идем в наш gallery-service и видим вызываемый нами метод на получение всех данных
+
+        @GetMapping(path = "/show")
+        public Flux<Bucket> getAllEmployeesList() {
+            return bucketRepository.findAll();
+        }
+        
+Теперь когда мы будем вызывать URL 
+ 
+    http://localhost:8082/getAllDataFromGalleryService
+    
+на нашем user-service, он посмотрит на аннотацию @FeignClient(name = “gallery-service”) и увидит, что там указан сервис `gallery-service`, он пойдет в Eureka Server, спросит про `gallery-service`, Eureka Server скажет ему где он находится и Feign Client по этому же URL в BucketController вызовет метод 
+
+        @GetMapping(path = "/show")
+        public Flux<Bucket> getAllEmployeesList() {
+            return bucketRepository.findAll();
+        }
+        
+Все очень просто.
+
+____
+
+
+### RestTemplate
 
 
