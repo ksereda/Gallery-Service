@@ -198,9 +198,11 @@ Eureka использует протокол, который требует, ч�
 
 Более детальное описание других настроек можно увидеть в коде на github.
 
-    Eureka-service github:
+Ссылка на Eureka Server:
 
     https://github.com/ksereda/Gallery-Service/tree/master/eureka-server
+    
+Некоторые настройки в `application.yml` закомментированы. Не обращайте на них внимание, к ним вернемся чуть позже.
     
 Основной класс:
 
@@ -224,4 +226,201 @@ Eureka использует протокол, который требует, ч�
 
 ___
 
-### 
+### Eureka Client
+
+Для того, чтобы сервис стал клиентом Eureka, ему необходимо над основным классом указать `@EnableEurekaClient`
+
+    @SpringBootApplication
+    @EnableEurekaClient
+    public class GalleryServiceApplication {
+    
+        public static void main(String[] args) {
+            SpringApplication.run(GalleryServiceApplication.class, args);
+        }
+    
+    }
+
+В нашем примере все остальные сервисы будут по совместительству клиентами Eureka, не важно, каку функцию они выполняют.
+
+___
+
+### Gallery-Service
+
+Рассмотрим `gallery-service`.
+
+Он представляет обычный CRUD.
+
+Мы будем использовать базу MongoDB, Spring WebFlux для реактивности и Lombok.
+
+У нас есть Bucket модель с темами для изучения 
+
+    @Data
+    @Builder
+    @AllArgsConstructor
+    @Document(collection = "buckets")
+    public class Bucket {
+    
+        @Id
+        private String id;
+    
+        @NotBlank
+        @Size(max = 10)
+        private String title;
+    
+        private String description;
+        private int personalNumber;
+        private String imageLink;
+    
+    }
+    
+У нас есть контроллер `BucketController` , который обрабатывает запросы через реактивный репозиторий
+
+    @Repository
+    public interface BucketRepository extends ReactiveMongoRepository<Bucket, String> {
+    }
+
+Все достаточно просто.
+
+Файл настроек также прост
+
+    spring:
+      application:
+        name: gallery-service
+      data:
+        mongodb:
+          uri: mongodb://localhost:27017/gallerydb
+    
+    server:
+      port: 8081
+    
+    eureka:
+      client:
+        serviceUrl:
+          defaultZone: ${EUREKA_URI:http://localhost:8761/eureka}
+      instance:
+        preferIpAddress: true
+
+Используем MongoDB в докере на порту 27017 с именем базы gallerydb
+
+Запустите Eureka Server вначале, а затем запустите наш сервис и перейдите на
+
+    http://localhost:8081/
+    
+чтобы получить информацию что наш сервис работает.
+
+Если вы перейдете в Eureka
+
+    http://localhost:8761
+    
+Вы увидите что Eureka увидела наш сервис (имя и на каком порту он работает).
+Сервер и клиент обменялись эхо запросами и поддерживают связь.
+
+Также при старте gallery-service в консоли вы можете увидеть строки
+
+    2019-08-29 15:53:41.923  INFO [gallery-service,,,] 1333 --- [  restartedMain] com.netflix.discovery.DiscoveryClient    : Getting all instance registry info from the eureka server
+    2019-08-29 15:53:42.389  INFO [gallery-service,,,] 1333 --- [  restartedMain] com.netflix.discovery.DiscoveryClient    : The response status is 200
+    
+    2019-08-29 15:53:42.410  INFO [gallery-service,,,] 1333 --- [  restartedMain] o.s.c.n.e.s.EurekaServiceRegistry        : Registering application gallery-service with eureka with status UP
+    
+что означает, что сервис зарегистрировался в Eureka и получил подтверждение.
+
+Непосредственно в консоли самой Eureka можно увидеть следующее
+
+    2019-08-29 15:53:42.484  INFO 1053 --- [nio-8761-exec-1] c.n.e.registry.AbstractInstanceRegistry  : Registered instance GALLERY-SERVICE/192.168.97.121:gallery-service:8081 with status UP (replication=false)
+    2019-08-29 15:53:43.056  INFO 1053 --- [nio-8761-exec-3] c.n.e.registry.AbstractInstanceRegistry  : Registered instance GALLERY-SERVICE/192.168.97.121:gallery-service:8081 with status UP (replication=true)
+    
+Eureka успешно зарегистрировала gallery-service.
+
+Вы также можете запустить gallery-service не запуская перед ним Eureka, тогда вы увидите что сервис поднялся, но не смог зарегистрироваться в Eureka и получите сообщение об ошибке
+
+    2019-08-29 15:58:42.529  WARN [gallery-service,,,] 1333 --- [freshExecutor-0] c.n.d.s.t.d.RetryableEurekaHttpClient    : Request execution failed with message: java.net.ConnectException: В соединении отказано (Connection refused)
+    2019-08-29 15:58:42.529 ERROR [gallery-service,,,] 1333 --- [freshExecutor-0] com.netflix.discovery.DiscoveryClient    : DiscoveryClient_GALLERY-SERVICE/192.168.97.121:gallery-service:8081 - was unable to refresh its cache! status = Cannot execute request on any known server
+    
+    com.netflix.discovery.shared.transport.TransportException: Cannot execute request on any known server
+    
+Но вы сможете работать с ним.
+
+Каждые 30 секунд сервис будет слать эхо запрос на Eureka и ждать что она ответит ему взаимностью.
+
+Ссылка на gallery-service
+
+    https://github.com/ksereda/Gallery-Service/tree/master/gallery-service
+    
+Некоторые настройки в `application.yml` закомментированы. Не обращайте на них внимание, к ним вернемся чуть позже.
+
+В основном классе я указал
+
+    	@Bean
+    	CommandLineRunner run(BucketRepository bucketRepository) {
+    		return args -> {
+    			bucketRepository.deleteAll()
+    					.thenMany(Flux.just(
+    							new Bucket("1", "Java", "OOP", 280, "http://infopulse-univer.com.ua/images/trenings/java.png"),
+    							new Bucket("2", "Java", "Steram API", 437, "https://www.hdwallpaperslife.com/wp-content/uploads/2018/09/JAVA14-480x270.png"),
+    							new Bucket("3", "Java", "Collections", 14, "https://i.ytimg.com/vi/oOOESCvGGcI/hqdefault.jpg"),
+    							new Bucket("4", ".NET", "Basic", 1213, "https://upload.wikimedia.org/wikipedia/commons/0/0e/Microsoft_.NET_logo.png"),
+    							new Bucket("5", "C++", "Basic", 870, "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSmgIz9Ug-MVzBQJMcgXedOXTqHWGmbSu5pPDivz8hrfo_GE0HZEA"),
+    							new Bucket("6", "JavaScript", "Angular 8", 155, "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTg41zepuyHbew8bIsTYeKWJ9RYOnnV922lNa85-fQTVrKDG19K2w")
+    					)
+    							.flatMap(bucketRepository::save))
+    					.thenMany(bucketRepository.findAll())
+    					.subscribe(System.out::println);
+    
+    		};
+    	}
+
+чтобы при старте приложения атвоматически создались данные, которые отобразятся в нашей MongoDB (чтобы не создавать вручную).
+
+Как настроить MongoDB я опишу ниже.
+
+Перейдите в браузере на 
+
+    http://localhost:8081/getAll
+    
+чтобы получить все данные из базы.
+
+Аналогично /create, /update, /delete
+
+- если вы перейдете на
+
+    
+    http://localhost:8081/stream/buckets
+    
+вы получите все данне из базы стримом.
+
+Здесь во всю используется прелесть реактивной системы с 
+    
+    MediaType.TEXT_EVENT_STREAM_VALUE
+
+- перейдите на
+
+    
+    http://localhost:8081/stream/buckets/default
+
+И будете получать каждую секунду новое деволтное значение
+
+- перейдите на
+
+    
+    http://localhost:8081/stream/buckets/delay
+    
+При помощи Flux мы можем получить все обьекты из базы с интервалом в 2 секунды каждый. 
+Здесь мы сэмулировали ситуацию, которая позволяет получить данные по мере их поступления. 
+Это одна из основных идей реактивного программирования.
+
+Мы подписываемся на поток и ждем данные. Spring сам уведомит нас о поступлении данных.
+
+Основная концепция реактивного программирования базируется на неблокирующем вводе/выводе.
+
+Напрмиер при старте приложения в нашей базе находится 4 записи а не 6. без использовании реактивности мы бы получили 4 записи. Потом кто-либо в этот промежуток времени добавил еще 2 записи и когда мы сделали второй запрос, мы бы получили 6 записей.
+
+С использованием потоков `Mono/Flux` мы сэмулировали такую ситуацию и за один запрос сможем получить все данные с небольшим интервалом.
+
+____
+
+
+
+
+
+
+
