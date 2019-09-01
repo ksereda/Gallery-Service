@@ -1355,5 +1355,115 @@ Accept - application/json
 
 Если вы используете несколько экземпляров сервиса галереи, каждый из которых работает на своем порту, то запросы будут равномерно распределены между ними.
 
+Ссылка на user-service на Пithub:
+
+    https://github.com/ksereda/Gallery-Service/tree/master/security-service
+
 ___
 
+### Config-Server и Config-Client
+
+Создадим общий сервис config-server, который будет содержать ссылки на хранилище с общими настройками. 
+Чтобы не писать одинаковый код в разных сервисах, будем использовать общее хранилище настроек.
+
+Мы рассмотрим оба варианта:
+
+- хранение настроек локально
+
+- хранение настроек на github
+
+![alt text](https://tech.asimio.net/images/config-server-registration-first.png)
+
+По умолчанию будем использовать локальный способ хранения (откуда другие сервисы будут считывать настройки - коннекшен к базе).
+
+Используется с аннотацией
+
+    @EnableConfigServer
+    
+Также необходимо добавить зависимость
+
+            <dependency>
+    		<groupId>org.springframework.cloud</groupId>
+    		<artifactId>spring-cloud-starter-config</artifactId>
+    	</dependency>
+    
+В файле application.yml 
+
+    server:
+      port: 8888
+    spring:
+      application:
+        name: config-server
+
+Указываем 2 способа хранения
+
+    spring:
+      profiles:
+        active: native
+    ---
+    spring:
+      profiles: native
+      cloud:
+        config:
+          server:
+            native:
+              search-locations:
+                /home/ks/IdeaProjects/Gallery-Service/ms-config-properties/{application}/{profile},
+    ---
+    spring:
+      profiles: git
+      cloud:
+        config:
+          server:
+            git:
+              uri: https://github.com/ksereda/Gallery-Service/
+              search-paths:
+                - "ms-config-properties/{application}/{profile}"
+                
+По умолчанию - локальный.
+
+И создадим папку `ms-config-properties` в которой будут лежать сами настройки.
+
+Рассмотрим на примере `gallery-service`.
+
+Создаем внутри папку с идентичным названием нашего сервиса (`gallery-service`), в которой мы используем разные профили.
+По умолчанию у нас профиль `default`.
+
+Внутри должен быть файл с названием сервиса - `gallery-service.yml`, в котором будем прописывать настройки (какие хотим).
+
+Теперь вернемся в наш gallery-service:
+в нем должна быть указана аннотация 
+
+    @EnableConfigClient
+    
+чтобы указать, что он также является конфиг клиентом.
+
+Также в application.yml файл нашего gallery-service необходимо добавить следующие настройки
+
+    cloud:
+        config:
+          discovery:
+            enabled: true
+            service-id: config-server
+            
+чтобы указать ему путь к config-server.
+
+Теперь когда вы запустите ваш gallery-service, он по умолчанию зарегистрируется в Eureka и будет образаться к config-server, который уже будет направлять его в локальное хранилище с настройками.
+Далее происходит получение настроек среди всех следующим образом:
+Он смотрит на `{application}` - имя сервиса (в нашем примере это gallery-service), и далее на `{profile}` - профиль по умолчанию у нас `default`.
+
+Это необходимо сделать не только для gallery-service, но и для всех остальных сервисов, которые исопльзуют какие-либо настройки. 
+Чтобы не плодить конфиг в самих сервисах, лучше вынести их в отдельный сервис, который отвечает за это.
+
+Ссылки на github:
+
+    https://github.com/ksereda/Gallery-Service/tree/master/config-server
+    https://github.com/ksereda/Gallery-Service/tree/master/ms-config-properties
+    
+___
+
+
+
+
+
+    
