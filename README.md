@@ -1676,3 +1676,55 @@ ___
 
 ### Services replicas
 
+
+Запускаем реплики Eureka Server (см выше).
+
+В `gallery-service` я создал `TestController`, в котором сделал пару методов:
+
+- showAllServices
+
+this.discoveryClient.getServices();
+
+- showService - информация по конкретному сервису, который он увидел (по ID)	
+
+this.discoveryClient.getInstances(serviceId);
+
+Там мы увидим информацию по сервисам (краткость - сестра таланта):
+
+	        html += "<h3>Instance: " + serviceInstance.getUri() + "</h3>";
+            html += "Host: " + serviceInstance.getHost() + "<br>";
+            html += "Port: " + serviceInstance.getPort() + "<br>";
+
+Изменили application.yml для `gallery-service`.
+
+Закомментировали все что было и раскомментировали то что сейчас закомментировано :)
+
+А именно `gallery-service` мы в настройках указали не саму Eureka Server, а одну из ее реплик, чтоб интересней было.
+Т.е. сейчас gallery-service завязан не на Eureka Server, а на одну из ее реплик, которая якобы работает в другой доменной зоне.
+
+    defaultZone: http://my-eureka-server-us.com:9001/eureka
+
+Делаем jar файл для gallery-service и копируем в другую папку.
+
+    maven install
+
+Запускаем сам `gallery-service`.
+Запускаем его реплику (имитируем ситуацию, будто бы она находится на другой еврике (которая тоже реплика) в другой стране например), у нее другой домен.
+
+	java -jar -Dspring.profiles.active=gallery-service-replica01 gallery-service-0.0.1-SNAPSHOT.jar
+
+Идем на Eureka Server replica, ведь на ней сейчас наш `gallery-service` зарегистрирован
+
+    http://my-eureka-server-us.com:9001
+
+и увидим там уже не один запущенный `gallery-service`, а 2 (т.к. у нас вторая - это реплика).
+
+Идем на сам gallery-service
+
+	localhost:8081
+
+видим что он видит Eureka Server replica и видит свою реплику (gallery-service replica).
+
+Идем на реплику `gallery-service`, и видим что он видит Eureka Server replica и сам оригинальный gallery-service.
+
+___
