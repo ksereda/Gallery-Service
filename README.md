@@ -1728,3 +1728,195 @@ this.discoveryClient.getInstances(serviceId);
 Идем на реплику `gallery-service`, и видим что он видит Eureka Server replica и сам оригинальный gallery-service.
 
 ___
+
+### ELK (ElasticSearch + Logstash + Kibana)
+
+Теперь давайте настроим ELK и подключим его к нашему user-service ля получения всех логов.
+
+![alt text](https://howtodoinjava.com/wp-content/uploads/2017/08/ELK.jpg)
+
+Установите по очереди
+
+- elasticsearch
+
+- logstash
+
+- kibana
+
+В ubuntu по умолчанию ставится в 
+
+    /usr/share/logstash/
+
+и
+
+    /etc/logstash/
+
+В `/etc/logstash/` создайте файл `logstash.conf` со следующим содержимым
+
+    input {
+      file {
+        type => "java"
+        # Logstash insists on absolute paths...
+        path => "/home/ks/logs/application.log"
+        codec => multiline {
+          pattern => "^%{YEAR}-%{MONTHNUM}-%{MONTHDAY} %{TIME}.*"
+          negate => "true"
+          what => "previous"
+        }
+      }
+    }
+    
+    filter {
+      #If log line contains tab character followed by 'at' then we will tag that entry as stacktrace
+      if [message] =~ "\tat" {
+        grok {
+          match => ["message", "^(\tat)"]
+          add_tag => ["stacktrace"]
+        }
+      }
+    
+      #Grokking Spring Boot's default log format
+      grok {
+        match => [ "message",
+                   "(?<timestamp>%{YEAR}-%{MONTHNUM}-%{MONTHDAY} %{TIME})  %{LOGLEVEL:level} %{NUMBER:pid} --- \[(?<thread>[A-Za-z0-9-]+)\] [A-Za-z0-9.]*\.(?<class>[A-Za-z0-9#_]+)\s*:\s+(?<logmessage>.*)",
+                   "message",
+                   "(?<timestamp>%{YEAR}-%{MONTHNUM}-%{MONTHDAY} %{TIME})  %{LOGLEVEL:level} %{NUMBER:pid} --- .+? :\s+(?<logmessage>.*)"
+                 ]
+      }
+    
+      #Parsing out timestamps which are in timestamp field thanks to previous grok section
+      date {
+        match => [ "timestamp" , "yyyy-MM-dd HH:mm:ss.SSS" ]
+      }
+    }
+    
+    output {
+        stdout {
+            codec => rubydebug
+        }
+        elasticsearch{
+            hosts=>["localhost:9200"]
+            index=>"todo-logstash-%{+YYYY.MM.dd}"
+        }
+    }
+
+
+Ваш индекс называется `todo-logstash`.
+
+Точно такой же файл создайте в корне проекта в IDEA.
+Только укажите свой путь к сохраняемому файлу с логами
+
+У меня это
+
+    path => "/home/ks/logs/application.log"
+
+В коде в IDEA мы должны указать логгер и залогировать то что нам нужно.
+
+Например в контроллере мы залогируем стартовую страницу.
+
+    private static final Logger LOG = Logger.getLogger(UserController.class.getName());
+
+    @RequestMapping("/")
+    public String home() {
+        String home = "User-Service running at port: " + env.getProperty("local.server.port");
+        LOG.log(Level.INFO, home);
+        return home;
+    }
+
+
+А это импорты
+
+    import org.apache.log4j.Level;
+    import org.apache.log4j.Logger;
+
+Далее запускаем:
+
+1) elasticsearch
+
+    
+    sudo service elasticsearch start
+
+2) logstash
+
+переходим в папку
+
+    cd /usr/share/logstash
+    
+и там в консоли пишем
+
+    bin/logstash --verbose -f /etc/logstash/logstash.conf
+
+т.е. запускаем logstash с нашими новыми настройками, которые мы создали (logstash.conf)
+
+3) kibana
+
+    
+    service kibana start
+
+Идем в браузере на 
+
+    http://localhost:9200/
+    
+и видим что `elasticsearch` работает
+
+Здесь
+
+    http://localhost:9200/_cat/indices
+    
+видим все наши индексы.
+
+И сейчас стартуем приложение в IDEA и мы здесь увидим наш новый индекс `todo-logstash`
+
+    http://localhost:9200/_cat/indices
+
+Также можем протестировать:
+ 
+в консоли пишем
+
+    curl -XGET http://127.0.0.1:9200
+
+если получим ответ наподобие
+
+    {
+      "name" : "ks-pc",
+      "cluster_name" : "elasticsearch",
+      "cluster_uuid" : "dZ2ldEdWSRGHwdMHydMslQ",
+      "version" : {
+        "number" : "7.3.1",
+        "build_flavor" : "default",
+        "build_type" : "deb",
+        "build_hash" : "4749ba6",
+        "build_date" : "2019-08-19T20:19:25.651794Z",
+        "build_snapshot" : false,
+        "lucene_version" : "8.1.0",
+        "minimum_wire_compatibility_version" : "6.8.0",
+        "minimum_index_compatibility_version" : "6.0.0-beta1"
+      },
+      "tagline" : "You Know, for Search"
+    }
+
+
+значит все хорошо.
+
+Идем дальше.
+
+Теперь идем в `kibana`
+
+    http://localhost:5601
+
+Слева в меню (самая последняя) - Management - там выбираем Index Patterns - и там Create index pattern.
+
+Пишите имя нашего индекса
+
+`todo-logstash`
+
+и он должен увидеть его. 
+Жмем Next step - выбираем в списке timestamp - Ok.
+
+Индекс создан.
+
+Идем слева в меню в Discover (самый верхний пункт в меню слева) - там выбираем слева в окошке этот индекс.
+
+Отправляем любым удобным способом запрос (браузер, Postman, консоль) и жмякаем на кнопку `Refresh`.
+
+Мы увидим все наши запросы. Они будут попадать сюда посредством логера, который мы указали в классах в коде.
