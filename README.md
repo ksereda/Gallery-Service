@@ -1981,6 +1981,6 @@ ___
 
 Обратите внимание что в Hystrix Dashboard теперь будут отображаться неудачные попытки (красные цифры).
 
-![alt text](http://2.bp.blogspot.com/-ZNBCoWHmVYw/VMzVWnqkiyI/AAAAAAAABN8/CHBXa7hn1uo/s1600/hystrix-dashboard.png)
+![alt text](https://s3.amazonaws.com/stackabuse/media/spring-cloud-hystrix-8.png)
 
 ___
