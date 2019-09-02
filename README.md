@@ -1739,9 +1739,15 @@ ___
 
 - elasticsearch
 
+    https://www.elastic.co/downloads/elasticsearch
+
 - logstash
 
+    https://www.elastic.co/downloads/logstash
+
 - kibana
+
+    https://www.elastic.co/downloads/kibana
 
 В ubuntu по умолчанию ставится в 
 
