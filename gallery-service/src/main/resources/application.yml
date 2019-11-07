@@ -6,6 +6,12 @@ spring:
         service-id: config-server
   application:
     name: gallery-service
+  zipkin:
+    baseUrl: http://localhost:9411/
+  sleuth:
+    sampler:
+      probability: 100
+
 #  data:
 #    mongodb:
 #      uri: mongodb://localhost:27017/gallerydb
@@ -28,9 +34,9 @@ eureka:
 #spring:
 #  application:
 #    name: gallery-service
-#  data:
-#    mongodb:
-#      uri: mongodb://localhost:27017/gallerydb
+##  data:
+##    mongodb:
+##      uri: mongodb://localhost:27017/gallerydb
 #
 #server:
 #  port: 8081

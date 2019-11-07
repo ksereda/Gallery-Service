@@ -15,10 +15,14 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import javax.validation.Valid;
 import java.time.Duration;
+import java.util.logging.Logger;
 
 @RestController
 @RequestMapping("/")
 public class BucketController {
+
+    Logger logger = java.util.logging.Logger.getLogger(BucketController.class.getName());
+
 
     @Autowired
     private Environment env;
@@ -28,16 +32,20 @@ public class BucketController {
 
     @RequestMapping("/")
     public String home() {
-        return "Gallery-Service running at port: " + env.getProperty("local.server.port");
+        String home = "Gallery-Service running at port: " + env.getProperty("local.server.port");
+        logger.info(home);
+        return home;
     }
 
     @GetMapping(path = "/show")
     public Flux<Bucket> getAllEmployeesList() {
+        logger.info("Get data from database (Feign Client on User-Service side)");
         return bucketRepository.findAll();
     }
 
     @GetMapping("/data")
-    public Flux<Bucket> data(){
+    public Flux<Bucket> data() {
+        logger.info("Get data from database (RestTemplate on User-Service side)");
         return bucketRepository.findAll();
     }
 
@@ -103,6 +111,7 @@ public class BucketController {
     // Get all Bucket from the database (every 1 second you will receive 1 record from the DB)
     @GetMapping(value = "/stream/buckets/delay", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<Bucket> streamAllBucketsDelay() {
+        logger.info("Get data from database (WebClient on User-Service side)");
         return bucketRepository.findAll().delayElements(Duration.ofSeconds(2));
     }
 
