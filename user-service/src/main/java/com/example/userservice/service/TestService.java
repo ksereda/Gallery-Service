@@ -22,10 +22,6 @@ public class TestService {
 
     @HystrixCommand(fallbackMethod = "failed")
     public String data() {
-//        InstanceInfo instanceInfo = eurekaClient.getNextServerFromEureka("gallery-service", false);
-//        String serviceBaseUrl = instanceInfo.getHomePageUrl();
-//        String result = new RestTemplate().getForObject(serviceBaseUrl + "data", String.class);
-//        return result;
         String response = template.getForObject("http://gallery-service/data", String.class);
         LOG.log(Level.INFO, response);
         return response;

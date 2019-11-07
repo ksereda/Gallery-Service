@@ -11,13 +11,13 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
-import org.apache.log4j.Level;
-import org.apache.log4j.Logger;
+//import org.apache.log4j.Level;
+//import org.apache.log4j.Logger;
+import java.util.logging.Logger;
 
 import java.util.List;
 
@@ -25,7 +25,9 @@ import java.util.List;
 @RequestMapping("/")
 public class UserController {
 
-    private static final Logger LOG = Logger.getLogger(UserController.class.getName());
+//    private static final Logger LOG = Logger.getLogger(UserController.class.getName());
+   Logger logger = java.util.logging.Logger.getLogger(UserController.class.getName());
+
 
     @Autowired
     private Environment env;
@@ -45,28 +47,30 @@ public class UserController {
     @RequestMapping("/")
     public String home() {
         String home = "User-Service running at port: " + env.getProperty("local.server.port");
-        LOG.log(Level.INFO, home);
+//        LOG.log(Level.INFO, home);
+        logger.info(home);
         return home;
     }
 
     // Using Feign Client
     @RequestMapping(path = "/getAllDataFromGalleryService")
-    public List<Bucket> getDataByFeignClient(Model model) {
+    public List<Bucket> getDataByFeignClient() {
         List<Bucket> list = ServiceFeignClient.FeignHolder.create().getAllEmployeesList();
-//        model.addAttribute("employees", list);
-//        return "resultlist-employees";
+        logger.info("Calling through Feign Client");
         return list;
     }
 
     // Using RestTemplate
     @GetMapping("/data")
-    public String data(){
+    public String data() {
+        logger.info("Calling through RestTemplate");
         return service.data();
     }
 
     // Using WebClient
     @GetMapping(value = "/getDataByWebClient",produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<Bucket> getDataByWebClient() {
+        logger.info("Calling through WebClient");
         return webClientService.getDataByWebClient();
     }
 

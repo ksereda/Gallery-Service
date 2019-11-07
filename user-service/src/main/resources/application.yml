@@ -9,6 +9,11 @@ spring:
       discovery:
         enabled: true
         service-id: config-server
+  zipkin:
+    baseUrl: http://localhost:9411/
+  sleuth:
+    sampler:
+      probability: 100
 
 server:
   port: 8082
