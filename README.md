@@ -1995,6 +1995,288 @@ ___
 
 ___
 
+### Spring Cloud Sleuth + Zipkin
+
+Давайте добавим `Spring Cloud Sleuth` в наш проект.
+Для примеры добавим его в
+
+`user-service`
+
+    gallery-service
+
+Напоминаю, что `user-service` общается с `gallery-service` посредством `RestTemplate, Feign Client и WebClient` (все 3 примера для наглядности).
+Получается сборная солянка, но мы это все делаем ради изучения возможностей. Так что вперед.
+
+В user-service и gallery-service lобавляем зависимости
+
+		<dependency>
+			<groupId>org.springframework.cloud</groupId>
+			<artifactId>spring-cloud-starter-sleuth</artifactId>
+		</dependency>
+
+Остановимся на `user-service`.
+В `UserController` в методах добавим вот такую штуковину:
+
+Заменим тот логгер, что у на сбыл на следующий
+
+Импорт:
+    
+    import java.util.logging.Logger;
+
+Логгер:
+
+    Logger logger = java.util.logging.Logger.getLogger(UserController.class.getName());
+
+В ендпоинт для стартовой страницы добавим его
+
+    @RequestMapping("/")
+    public String home() {
+        String home = "User-Service running at port: " + env.getProperty("local.server.port");
+        logger.info(home);
+        return home;
+    }
+
+Сделаем то же самое для остальных методов.
+
+    @RestController
+    @RequestMapping("/")
+    public class UserController {
+    
+       Logger logger = java.util.logging.Logger.getLogger(UserController.class.getName());
+    
+    
+        @Autowired
+        private Environment env;
+    
+        @Autowired
+        private RestTemplate restTemplate;
+    
+        @Autowired
+        private WebClient webClient;
+    
+        @Autowired
+        private TestService service;
+    
+        @Autowired
+        private WebClientService webClientService;
+    
+        @RequestMapping("/")
+        public String home() {
+            String home = "User-Service running at port: " + env.getProperty("local.server.port");
+            logger.info(home);
+            return home;
+        }
+    
+        // Using Feign Client
+        @RequestMapping(path = "/getAllDataFromGalleryService")
+        public List<Bucket> getDataByFeignClient() {
+            List<Bucket> list = ServiceFeignClient.FeignHolder.create().getAllEmployeesList();
+            logger.info("Calling through Feign Client");
+            return list;
+        }
+    
+        // Using RestTemplate
+        @GetMapping("/data")
+        public String data() {
+            logger.info("Calling through RestTemplate");
+            return service.data();
+        }
+    
+        // Using WebClient
+        @GetMapping(value = "/getDataByWebClient",produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+        public Flux<Bucket> getDataByWebClient() {
+            logger.info("Calling through WebClient");
+            return webClientService.getDataByWebClient();
+        }
+    
+        @ExceptionHandler(DataAccessException.class)
+        public ResponseEntity<MyCustomServerException> handleWebClientResponseException(DataAccessException ex) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new MyCustomServerException("A Bucket with the same title already exists"));
+        }
+    
+    }
+
+Также заменим его в классе `Fallback`, используемого для `ServiceFeignClient` в случае ошибки соединения с `gallery-service`.
+
+Теперь займемся `gallery-service`.
+
+В `BucketController` добавим логгер в методы приветствия и получения данных из базы.
+Напомню, что метод `getAllEmployeesList` - этот тот самый метод, который user-service вызывает у gallery-service, чтобы получить данные из базы через Feign Client,
+метод `data` - через RestTemplate,
+метод `streamAllBucketsDelay` - через WebClient (реактивность рулит :).
+Остальные методы опустим, они нам пока не нужны.
+
+    Logger logger = java.util.logging.Logger.getLogger(BucketController.class.getName());
+
+
+    @RequestMapping("/")
+    public String home() {
+        String home = "Gallery-Service running at port: " + env.getProperty("local.server.port");
+        logger.info(home);
+        return home;
+    }
+
+    @GetMapping(path = "/show")
+    public Flux<Bucket> getAllEmployeesList() {
+        logger.info("Get data from database");
+        return bucketRepository.findAll();
+    }
+
+    @GetMapping("/data")
+    public Flux<Bucket> data() {
+        logger.info("Get data from database (RestTemplate on User-Service side");
+        return bucketRepository.findAll();
+    }
+
+    @GetMapping(value = "/stream/buckets/delay", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<Bucket> streamAllBucketsDelay() {
+        logger.info("Get data from database (WebClient on User-Service side");
+        return bucketRepository.findAll().delayElements(Duration.ofSeconds(2));
+    }
+
+Запускем `Eureka-Server`, затем `mongodb` в докере (об этом писал выше статье), затем `Gallery-Service`, затем `User-Service`.
+
+Идем на `user-service` и вызываем
+
+стартовую страницу
+
+    localhost:8082
+
+В консоли мы увидим
+
+    2019-11-07 17:53:26.237  INFO [user-service,a244a7cc14562192,a244a7cc14562192,false] 13967 --- [nio-8082-exec-1] c.e.u.controller.UserController          : User-Service running at port: 8082
+
+Отлично. 
+Это основная информация, добавленная `Sleuth` в формате
+
+    [application name, traceId, spanId, export]
+
+где
+`application name` - это имя приложения, указанное в application.yml
+`traceId` - ID, назначаемый каждому запросу.
+`spanId` - используется для отслеживания работы. Каждый запрос может иметь несколько шагов, каждый шаг имеет свой уникальный spanId.
+`export` - это флаг, который указывает, следует ли экспортировать определенный журнал в инструмент агрегирования журналов, такой как Zipkin.
+
+Теперь вызываем метод через `Feign Client`
+
+    localhost:8080/getAllDataFromGalleryService
+
+В консоли видим
+
+    2019-11-07 17:55:07.440  INFO [user-service,4296c77df761a629,4296c77df761a629,false] 13967 --- [nio-8082-exec-6] c.e.u.controller.UserController          : Calling through Feign Client
+
+Смотрим в консоли `gallery-service` и видим
+
+    2019-11-07 17:55:07.399  INFO [gallery-service,5cf55a267ea457ba,5cf55a267ea457ba,false] 13750 --- [nio-8081-exec-1] c.e.g.controller.BucketController        : Get data from database (Feign Client on User-Service side
+
+Теперь вызываем через `RestTemplate`
+
+    localhost:8082/data
+
+В консоли `user-service` видим 
+
+    2019-11-07 17:57:49.069  INFO [user-service,e6738131497b256d,e6738131497b256d,false] 13967 --- [nio-8082-exec-2] c.e.u.controller.UserController          : Calling through RestTemplate
+
+а в консоли `gallery-service`
+
+    2019-11-07 17:57:49.090  INFO [gallery-service,e6738131497b256d,22c606c36ed48e63,false] 13750 --- [nio-8081-exec-6] c.e.g.controller.BucketController        : Get data from database (RestTemplate on User-Service side
+
+И также для `WebClient`.
+
+Настоящая проблема кроется здесь не в том, чтобы идентифицировать журналы в пределах одного микросервиса, а в том, чтобы отслеживать цепочку запросов между несколькими микросервисами.
+Именно параметр `traceId` - это то, что позволит вам отслеживать запрос при его переходе от одного сервиса к другому.
+
+Это будет работать аналогично, если одно приложение с поддержкой `Sleuth` вызывало другое, передавая `traceId` и `spanId` в заголовках.
+
+Если вы используете `Feign` от `Spring Cloud Netflix`, информация трассировки также будет добавлена ​​к этим запросам. Кроме того, `Zuul` из `Spring Cloud Netflix` также будет перенаправлять заголовки через прокси в другие сервисы. Это очень удобно!
+
+Например вы используете `ELK` для сбора и анализа логов с ваших микросервисов. Используя `Sleuth`, вы можете легко выполнять поиск по всем собранным журналам при помощи `traceId` и видеть, как запрос передается от одного микросервиса к следующему.
+
+Если вдруг вы захотите видеть информацию о времени, вы можете воспользоваться `Zipkin`.
+
+Давайте займемся этим.
+
+Добавьте новые зависимость в ваши сервисы
+
+`<dependency>  
+    <groupId>org.springframework.cloud</groupId>  
+    <artifactId>spring-cloud-starter-zipkin</artifactId>  
+</dependency>`
+
+Далее установите и запустите `Zipkin`
+
+Вы можете установить `Zipkin` следуюшим образом:
+
+1) Запустить с помощью docker
+
+    
+    docker run -d -p 9411:9411 openzipkin/zipkin
+
+2) Скачать с сайта (нужна минимум java 8 или выше)
+
+    
+    curl -sSL https://zipkin.io/quickstart.sh | bash -s
+    java -jar zipkin.jar
+
+Более детальный разбор вы можете прочитать в моей статье про Sleuth + Zipkin.
+
+Перейдите по урлу
+
+    localhost:9411 и вы увидите веб интерфейс Zipkin
+
+В свои сервисы в application.yml необходимо добавить
+
+    spring:
+      zipkin:
+        baseUrl: http://localhost:9411/
+      sleuth:
+        sampler:
+          probability: 100
+
+для интеграции с `Zipkin`.
+
+`baseUrl` свойство сообщает `Spring` и `Sleuth` куда передавать данные. Кроме того, по умолчанию `Spring Cloud Sleuth` устанавливает все диапазоны как неэкспортируемые (4-ый параметр export = false).
+Чтобы установить export в true необходимо установить частоту дискретизации, используя `sampler.probability` свойство = 100.
+
+Запускем `Eureka-Server`, `mongo`, `Gallery-Service`, `User-Service`.
+Открываем `Zipkin`
+
+    localhost:9411
+
+![alt text](images/zipkin-main-page.png)
+
+Вызываем стартовую страницу `user-service`
+
+    localhost:8082
+
+В `Zipkin` жмем на `Find Traces` - видим текущий запрос
+
+![alt text](images/zipkin-find-1.png)
+
+![alt text](images/zipkin-find-2.png)
+
+Теперь из `user-service` вызываем gallery-service (для примера через RestTemplate)
+
+    localhost:8082/data
+
+В `Zipkin` видим новый запрос
+
+![alt text](images/zipkin-query-1.png)
+
+Жмем на него и видим более детальную картину с временем выполнения. Красота.
+
+![alt text](images/zipkin-query-2.png)
+
+![alt text](images/zipkin-query-3.png)
+
+Теперь можем выборочно посмотреть длительность запроса как на стороне `user-service` так и на стороне `gallery-service`.
+
+С помощью такого подхода можно выстроить очень мощный инструмент для мониторинга вашей системы.
+
+В следующих частях нашей статьи мы `Sleuth` и `Zipkin` свяжем с `ELK`.
+
+___
+
 ### Conclusion
 
 Спасибо за внимание!
