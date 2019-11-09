@@ -1,4 +1,4 @@
 spring:
   data:
     mongodb:
-      uri: mongodb://localhost:27017/gallerydb
+      uri: mongodb://localhost:27018/moviedb
