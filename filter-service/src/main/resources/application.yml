@@ -1,0 +1,24 @@
+spring:
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+  application:
+    name: subscriber-service
+  cloud:
+    stream:
+      rabbit:
+        bindings:
+          input:
+            consumer:
+              autoBindDlq: true
+      bindings:
+        input:
+          destination: inputSubscriber
+          group: inputSubscriberGroup
+
+server:
+  port: 8030
+
+
