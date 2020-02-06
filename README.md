@@ -2275,6 +2275,232 @@ ___
 
 В следующих частях нашей статьи мы `Sleuth` и `Zipkin` свяжем с `ELK`.
 
+
+___
+
+Теперь попробуем добавить пару тройку сервисов к уже существующему зоопарку и настроим коммуникацию между ними посредством `Spring Cloud Stream` и `Kafka`.
+
+У нас будет `order-service`, который будет публиковать сообщения о заказах в брокер.
+Также у нас будет сервис `bucket-service`, который будет подписан на брокера - он будет брать из брокера сообщения и обрабатывать заказы (добавлять к ним статус checked).
+После обработки заказа `bucket-service` будет слать подтверждение в брокер, а сервис `store-service` будет получать обработанные ответы и складировать их на складе (выводить в консоль).
+
+Для более подробного ознакомления по `Spring Cloud Stream` осмелюсь порекомендовать свою статью
+https://medium.com/@kirill.sereda/spring-cloud-stream-%D0%BF%D0%BE-%D1%80%D1%83%D1%81%D1%81%D0%BA%D0%B8-570568977e3f
+
+Поехали.
+
+Небольшое введение в `Spring Cloud Stream`:
+В чем заключается вся прелесть и простота Spring Cloud Stream ?
+Есть такие понятия, как:
+- `Sink` - представляет базовую структуру для создания необходимых привязок (очередь, тема и т.д.) - на принимающей стороне (подписчик),
+- `Source` - противоположность Sink. Он используется на публикующей стороне (издатель).
+Source и Sink являются связующими интерфейсами, предоставляемыми Spring Cloud Stream.
+Мы будем использовать объект класса Source для публикации объекта Message в RabbitMQ.
+- `Processor` - может использоваться для приложения, имеющего как входящий, так и исходящий канал.
+
+В нашем `order-service` будет использовать `Source` интерфейс.
+
+Модель:
+
+    @Data
+    @AllArgsConstructor
+    public class Order {
+    
+        private final int id;
+        private final String type;
+        private final String name;
+    
+    }
+
+И простой сервис слой
+
+    import com.example.orderservice.model.Order;
+    import lombok.AllArgsConstructor;
+    import org.springframework.beans.factory.annotation.Autowired;
+    import org.springframework.cloud.stream.annotation.EnableBinding;
+    import org.springframework.cloud.stream.messaging.Source;
+    import org.springframework.messaging.support.MessageBuilder;
+    import org.springframework.scheduling.annotation.EnableScheduling;
+    import org.springframework.scheduling.annotation.Scheduled;
+    
+    @EnableBinding(Source.class)
+    @EnableScheduling
+    @AllArgsConstructor
+    class SenderService {
+    
+        private final Source source;
+    
+        @Autowired
+        private final TicketGenerator ticketGenerator;
+    
+        @Scheduled(fixedRate = 5000)
+        private void sendMessage() {
+            Order editedOrder = ticketGenerator.createOrderForSend();
+            System.out.println(editedOrder);
+            source.output().send(MessageBuilder.withPayload(editedOrder).build());
+        }
+    
+    }
+
+Здесь формируется произвольный заказ каждые 5 секунд и отправляется в брокер.
+
+Файл настроек `application.properties`
+
+    server.port=8033
+    
+    spring.cloud.stream.bindings.output.destination=bucket
+    spring.cloud.stream.bindings.output.group=bucket
+    
+
+Идем дальше. Сделаем `bucket-service`, который будет принимать заказы `(@StreamListener(Processor.INPUT))` и добавлять к ним статус checked и слать измененные заказы в брокер `(@SendTo(Processor.OUTPUT))`.
+
+Модель
+    
+    @Data
+    @AllArgsConstructor
+    @Document(collection = "orders")
+    public class Order {
+    
+        private final int id;
+        private final String type;
+        private final String name;
+        private final String status;
+    
+    }
+
+Здесь мы к существующему заказу будем добавлять статус.
+
+
+Сервис слой
+    
+    import com.example.bucketservice.model.Order;
+    import org.springframework.cloud.stream.annotation.EnableBinding;
+    import org.springframework.cloud.stream.annotation.StreamListener;
+    import org.springframework.cloud.stream.messaging.Processor;
+    import org.springframework.integration.annotation.MessageEndpoint;
+    import org.springframework.messaging.handler.annotation.SendTo;
+    
+    @EnableBinding(Processor.class)
+    @MessageEndpoint
+    public class CheckOrderService {
+    
+        @StreamListener(Processor.INPUT)
+        @SendTo(Processor.OUTPUT)
+        Order transform(Order order) {
+    
+            Order checkedOrder = new Order(order.getId(),
+                    order.getType(),
+                    order.getName(),
+                    "checked");
+    
+            System.out.println(checkedOrder);
+    
+            return checkedOrder;
+        }
+    
+    }
+
+Файл настроек `application.properties`
+
+    server.port=8044
+    
+    spring.cloud.stream.bindings.input.destination=bucket
+    spring.cloud.stream.bindings.input.group=bucket
+    spring.cloud.stream.bindings.input.binder=kafka
+    
+    spring.cloud.stream.bindings.output.destination=store
+    spring.cloud.stream.bindings.output.group=store
+    spring.cloud.stream.bindings.output.binder=kafka
+
+Обратите внимание, что для `order-service` (он отправляет сообщение в брокер) указан `output.destination`
+
+    spring.cloud.stream.bindings.output.destination=bucket
+    
+а для `bucket-service` (он читает из брокера сообщение, которое ему послал order-service) указан `input.destination`
+
+    spring.cloud.stream.bindings.input.destination=bucket
+
+и также для отношения `bucket-service` (он принял сообщение от order-service, зменил его (добавил статус) и отправил сообщение опять в брокер для store-service) и `store-service` (который читает сообщение из брокера, которое ему послал bucket-service).
+Здесь и кроется вся магия `Spring Cloud Stream` + вспомогательные интерфейсы `Sink, Source и Processor.`
+
+Как по мне, так это гораздо удобней чем писать (или копипастить) уже написанный код для подключения сервиса к брокеру, будь то RabbitMQ или Kafka. 
+Все очень быстро, красиво и без лишнего кода, который уже спрятан внутри этой реализации.
+
+И наконец `store-service.`
+
+Модель аналогичная.
+
+Сервис слой.
+    
+    import com.example.storeservice.model.Order;
+    import org.springframework.cloud.stream.annotation.EnableBinding;
+    import org.springframework.cloud.stream.annotation.StreamListener;
+    import org.springframework.cloud.stream.messaging.Sink;
+    import org.springframework.integration.annotation.MessageEndpoint;
+    import org.springframework.stereotype.Service;
+    import java.util.logging.Logger;
+    
+    @Service
+    @EnableBinding(Sink.class)
+    @MessageEndpoint
+    public class StoreService {
+    
+        Logger logger = java.util.logging.Logger.getLogger(StoreService.class.getName());
+    
+        @StreamListener(Sink.INPUT)
+        public void logMessage(Order order) {
+            logger.info("Order processing: " + order);
+        }
+    
+    }
+
+Файл настроек `application.properties`
+
+    server.port=8054
+    
+    spring.cloud.stream.bindings.input.destination=store
+    spring.cloud.stream.bindings.input.group=store
+    
+    spring.cloud.stream.kafka.binder.auto-add-partitions=true
+    spring.cloud.stream.kafka.binder.min-partition-count=4
+
+Запускаем `Kafka`
+
+1) скачать локально
+2) запустить через docker
+
+В файл /etc/hosts добавить следующую строку (в консоли: gedit /etc/hosts)
+
+    127.0.0.1 kafka
+
+В консоли:
+
+    docker network create kafka
+
+    docker run -d --net=kafka --name=zookeeper -e ZOOKEEPER_CLIENT_PORT=2181 confluentinc/cp-zookeeper:5.0.0
+
+    docker run -d --net=kafka --name=kafka -p 9092:9092 -e KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181 -e KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092 -e KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1 confluentinc/cp-kafka:5.0.0
+
+Проверяем 
+
+    docker images
+
+Стартуем
+
+    docker start zookeeper
+
+    docker start kafka
+
+
+Тестируем:
+
+Запускаем `store-service`, затем `bucket-service` и затем `order-service`.
+Видим как `order-service` каждые 5 секунд создает произвольный заказ и отсылает его в очередь.
+Затем `bucket-service` ко всем заказам добавляет статус "checked" и отсылает дальше по цепочке измененный заказ.
+И наконец `store-service` принимает уже измененный заказ и выводит в консоль.
+
+И наконец для `RabbitMQ` все будет выглядеть аналогичным образом.
+
 ___
 
 ### Conclusion
