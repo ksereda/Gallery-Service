@@ -2512,3 +2512,632 @@ ___
 `RSocket` - это будущее для взаимодействия компонентов в реактивной микросервисной среде, когда очень важен перфоманс и отказоустойчивость.
 
 ___
+
+### RSocket
+
+Spring + RSocket
+
+
+Что такое RSocket я рассказал в отдельной статье, т.к. мне кажется что это очень большая тема, на которую я вскоре напишу продолжение (я надеюсь).
+
+build.gradle
+
+    plugins {
+       id 'org.springframework.boot' version '2.2.4.RELEASE'
+       id 'io.spring.dependency-management' version '1.0.9.RELEASE'
+       id 'java'
+    }
+    
+    group = 'com.example'
+    version = '0.0.1-SNAPSHOT'
+    sourceCompatibility = '1.8'
+    
+    configurations {
+       compileOnly {
+          extendsFrom annotationProcessor
+       }
+    }
+    
+    repositories {
+       mavenCentral()
+    }
+    
+    dependencies {
+       implementation 'org.springframework.boot:spring-boot-starter-webflux'
+       implementation 'io.rsocket:rsocket-core:0.12.1'
+       implementation 'io.rsocket:rsocket-transport-netty:0.12.1'
+       compileOnly 'org.projectlombok:lombok'
+       annotationProcessor 'org.projectlombok:lombok'
+       testImplementation 'org.springframework.boot:spring-boot-starter-test'
+       testImplementation 'io.projectreactor:reactor-test'
+    }
+    
+    test {
+       useJUnitPlatform()
+    }
+    
+Server:
+
+    Configuration
+    @Configuration
+    public class RSocketConfig {
+    
+        @PostConstruct
+        public void startServer() {
+            RSocketFactory.receive()
+                    .acceptor((setupPayload, reactiveSocket) -> Mono.just(new RSocketService()))
+                    .transport(TcpServerTransport.create(8000))
+                    .start()
+                    .block()
+                    .onClose()
+                    .block();
+        }
+    
+    }
+
+Сервис, который запускает некоторую логику
+
+    @Slf4j
+    @Component
+    public class RSocketService extends AbstractRSocket {
+    
+        @Override
+        public Mono<Void> fireAndForget(Payload payload) {
+            System.out.println("fire-and-forget: server received");
+            return Mono.empty();
+        }
+    
+        @Override
+        public Mono<Payload> requestResponse(Payload payload) {
+            log.info(payload.getDataUtf8());
+            return Mono.just(DefaultPayload.create("Connection successful"));
+        }
+    
+        @Override
+        public Flux<Payload> requestStream(Payload payload) {
+            log.info(payload.getDataUtf8());
+            return Flux.range(1, 5)
+                    .map(i -> DefaultPayload.create("request-stream: " + i));
+    //        return Flux.just(
+    //                DefaultPayload.create("request-stream-1"),
+    //                DefaultPayload.create("request-stream-2"),
+    //                DefaultPayload.create("request-stream-3"),
+    //                DefaultPayload.create("request-stream-4"));
+        }
+    
+        @Override
+        public Flux<Payload>requestChannel(Publisher<Payload>payloads) {
+            return Flux.from(payloads).map(Payload::getDataUtf8)
+                    .doOnNext(str ->log.info("Received: " + str))
+                    .map(DefaultPayload::create);
+    
+        }
+    }
+
+Client:
+
+    Configuration
+    @Configuration
+    public class RSocketConfig {
+    
+        @Bean
+        public RSocket rSocket(){
+            return RSocketFactory.connect()
+                            .transport(TcpClientTransport.create("localhost", 8000))
+                            .start()
+                            .block();
+        }
+    }
+
+Controller
+
+    @Slf4j
+    @RestController
+    @RequestMapping("/api")
+    @RequiredArgsConstructor
+    public class RSocketController {
+        private final RSocket rSocket;
+        @GetMapping("/fire-and-forget")
+        public Mono<Void> fireAndForget() {
+            rSocket.fireAndForget(DefaultPayload.create("fire-and-forget!"))
+                    .subscribe(System.out::println);
+            return Mono.empty();
+        }
+        @GetMapping("/request-response")
+        public Mono<Payload> getRequestResponse() {
+            return rSocket.requestResponse(DefaultPayload.create("request-response!"))
+                    .doOnNext(System.out::println);
+        }
+        @GetMapping("/request-stream")
+        public Disposable getRequestStream() {
+    //        return rSocket.requestStream(DefaultPayload.create("request-stream!"));
+            return rSocket.requestStream(DefaultPayload.create("request-stream!"))
+                    .delayElements(Duration.ofMillis(1000))
+                    .subscribe(
+                            payload -> System.out.println(payload.getDataUtf8()),
+                            e -> System.out.println("Error: " + e.toString()),
+                            () -> System.out.println("Completed")
+                    );
+        }
+        @GetMapping(value = "channel")
+        public Flux<String> getChannel() {
+            return rSocket.requestChannel(Flux.interval(Duration.ofSeconds(2)).map(l -> DefaultPayload.create("ping ")))
+                    .map(Payload::getDataUtf8)
+                    .doOnNext(string ->log.info("Received: " + string))
+                    .take(20);
+        }
+    }
+
+Давайте запустим сервер, а затем клиента и попробуем вызвать все конечные точки по очереди.
+
+#### Fire-And-Forget
+
+Перейдите по URL
+
+    localhost:8080/api/fire-and-forget
+
+и сможете увидеть в консоли сообщение на сервере. Конечно же, на клиенте ничего нет.
+![alt text](images/spring-rsocket-fireAndForget.png)
+
+#### Request-Response
+
+Перейдите по URL
+
+    localhost:8080/api/request-response
+
+и увидите сообщеньку "Connection successful". Ура!
+![alt text](images/spring-rSocket-requestResponse-browser.png)
+
+На сервере
+![alt text](images/spring-rsocket-requestResponse-server.png)
+
+На клиенте
+![alt text](images/spring-rsocket-requestResponse-client.png)
+
+Мы отправили запрос и получили ответ.
+
+#### Request-Stream
+
+Перейдите по URL
+
+    localhost:8080/api/request-stream
+
+В модели request/stream подписчик отправляет запрос и издатель начнет отправлять ответ в неограниченном окличестве (но мы ограничились 5 элементами).
+
+Сервер
+![alt text](images/Spring-rSocket-requestStream-server.png)
+
+Клиент
+![alt text](images/spring-rSocket-requestStream-client.png)
+
+
+####Channel
+
+Перейдите по URL
+
+    localhost:8080/api/channel
+
+и в браузере в реальном времени мы увидим как сообщения приходят в течение 1 секунды (мы эмулировали эту ситуацию как канал связи между сервисами)
+![alt text](images/spring-rSocket-channel-browser.png)
+
+Клиент
+![alt text](images/spring-rSocket-channel-client.png)
+
+Сервер
+![alt text](images/spring-rSocket-channel-server.png)
+
+Модель channel обеспечивает двунаправленную связь: сообщения будут непрерывно передаваться от потребителя к издателю, а затем от издателя к потребителю.
+
+---
+
+### Spring + RSocket: part 2
+
+А теперь давайте сделаем 2 простых приложения: client-service будет запрашивать данные у movie-service.
+
+Movie-service:
+
+application.properties файл
+    
+    spring.rsocket.server.port=7000
+    spring.data.mongodb.uri=mongodb://localhost:27017/moviedb
+    
+Запускаем MongoDB в докере.
+
+Если у вас установлен докер, давайте начнем (если не установлен, то обязательно сделайте это)
+
+    docker pull mongo
+
+Докер скачает последнюю версию монг с docker-hub
+
+Проверяем вот так
+
+    docker images
+
+В результате мы увидим все текущие загруженные вами images (на данный момент у вас должно быть только один image, при условии, что вы ранее не использовали Docker)
+
+Старт Mongo:
+
+По умолчанию используется порт 27017
+    
+     docker run mongo
+
+или вы можете явно указать порт
+    
+    docker run mongo --port 27017
+
+Откройте новую консоль и там
+    
+    mongo
+
+Ну все, красавцы, теперь вы находитесь в оболочке Монго :)
+
+Если вы используете Mac OS, вам нужно написать:
+
+    docker exec -it mongo bash
+    (or instead mongo you need to write container ID)
+
+Затем напишите
+
+    mongo
+
+При условии, что вы запустили movie-service (он настроен с MongoDB на порт 27017), вы можете написать в оболочке Mongo
+
+    use moviedb
+
+где moviedb - это имя базы данных (см. файл application.properties)
+
+Затем выполните в нем
+
+    show collections
+
+и вы увидите объект movie (см. класс Movie)
+
+Затем
+
+    db.moviedb.find()
+
+И вы получите все данные (6 объектов), которые были созданы по умолчанию при запуске приложения.
+
+Если вы хотите запустить второй Mongo на другом порту (вообще не проблема)
+
+    docker run mongo - port 27018
+
+Откройте новую консоль, напишите
+
+    mongo
+
+И снова красавцы, вы уже в другой монге :)
+Едем дальше.
+
+Мы будем использовать базу данных MongoDB в контейнере Docker на порту 27017.
+
+Основной класс будет иметь следующую форму (здесь мы запустим 6 фильмов в нашей базе данных при запуске приложения)
+
+    @SpringBootApplication
+    public class MovieServiceApplication {
+       public static void main(String[] args) {
+          SpringApplication.run(MovieServiceApplication.class, args);
+       }
+       // This code creates a Flux of four sample Persons objects, saves them to the DB. Then, queries all the Persons from the DB and print them to the console.
+       @Bean
+       CommandLineRunner run(MovieRepository movieRepository) {
+          return args -> {
+             movieRepository.deleteAll()
+                   .thenMany(Flux.just(
+                         new Movie("1", "Lion King", "130"),
+                         new Movie("2", "Saw", "200"),
+                         new Movie("3", "Home Alone", "150"),
+                         new Movie("4", "Home Alone 2", "180"),
+                         new Movie("5", "Interstellar", "300"),
+                         new Movie("6", "Prometheus", "80")
+                   )
+                         .flatMap(movieRepository::save))
+                   .thenMany(movieRepository.findAll())
+                   .subscribe(System.out::println);
+          };
+       }
+    }
+
+Репозиторий:
+
+    @Repository
+    public interface MovieRepository extends ReactiveMongoRepository<Movie, String> {
+    }
+
+Вы также можете наследовать ReactiveMongoRepository.
+
+Если вы посмотрите на интерфейс ReactiveMongoRepository, то увидите, что нам возвращаются объекты, заключенные в классы Mono и Flux. Это означает, что при обращении в базу данных мы не сразу получим результат. Вместо этого мы получаем поток данных Publisher, из которого можно получить данные, как только они будут готовы, или, скорее, он передаст их нам, как только они будут готовы.
+
+Model:
+
+    @Data
+    @Builder
+    @AllArgsConstructor
+    @Document(collection = "movies")
+    public class Movie {
+        @Id
+        private String id;
+        private String name;
+        private String price;
+    }
+
+и
+
+    public class RequestMovie {
+        private String name;
+        public RequestMovie() {
+        }
+        public RequestMovie(String name){
+            this.name = name;
+        }
+        public String getName() {
+            return name;
+        }
+        public void setName(String name) {
+            this.name = name;
+        }
+    }
+
+Controller:
+
+    @RestController
+    @RequestMapping("/")
+    public class MovieController {
+        private MovieRepository movieRepository;
+        public MovieController(MovieRepository movieRepository) {
+            this.movieRepository = movieRepository;
+        }
+        @MessageMapping("request-response")
+        Mono<Movie> getMovieByName(Movie movie) {
+            return movieRepository.findById(movie.getId());
+        }
+        @MessageMapping("request-stream")
+        Flux<Movie> getAllMovies() {
+            return movieRepository.findAll();
+        }
+        @MessageMapping("fire-forget")
+        Mono<Void> addMovie(Movie movie) {
+            movieRepository.save(movie);
+            return Mono.empty();
+        }
+    }
+
+Наш сервер, связанный с Spring Boot, может просто настроить конечную точку с помощью аннотации @MessageMapping. Другими словами, нет необходимости наследовать и реализовывать класс AbstractRSocket. 
+Однако тип возврата должен быть четко определен в соответствии с моделью связи RSocket!
+
+Если вы используете метод Request-Response, аналогичный HTTP, данные ответа, которые должны быть доставлены, должны быть единым объектом! Т.е. тип возвращаемого значения должен быть Mono<Object>. 
+
+Если вы используете метод Request-Stream, данные ответа должны быть Flux, потому что данные ответа - это один или несколько потоковых данных!
+
+request-response: Сервер использует аннотацию @MessageMapping для настройки конечной точки. Тип возврата был Mono<Movie>. Клиент использует внедрение зависимостей через RSocketRequester.
+
+request-stream: Поскольку вам необходимо передать более одного потока данных, вы должны использовать Flux.
+
+fire-forget: Здесь сервер обрабатывает только запросы, полученные от клиентов, и не отвечает ни на какие данные. Так что здесь нам надо просто вернуть Mono.empty().
+
+Client-service
+
+Model - идентична серверу.
+
+Сделаем конфиг для RSocket.
+
+    @Slf4j
+    @Configuration
+    public class RSocketConfiguration {
+        @Bean
+        RSocketRequester rSocketRequester(RSocketStrategies strategies) {
+            InetSocketAddress address = new InetSocketAddress("localhost", 7000);
+            return RSocketRequester.builder()
+                    .rsocketFactory(factory -> factory
+                            .dataMimeType(MimeTypeUtils.ALL_VALUE)
+                            .frameDecoder(PayloadDecoder.ZERO_COPY))
+                    .rsocketStrategies(strategies)
+                    .connect(TcpClientTransport.create(address))
+                    .retry()
+                    .block();
+        }
+    }
+
+Мы также можем зарегистрировать RSocketRequester здесь
+
+    @Bean
+    public Mono<RSocketRequester> rSocketRequester(Mono<RSocket> rSocket, RSocketStrategies strategies) {
+        return rSocket
+                .map(socket -> RSocketRequester.wrap(socket, MimeTypeUtils.parseMimeType("application/cbor"), strategies))
+                .cache();
+    }
+
+но для простоты мы будем использовать его стандартную реализацию, предоставленную из коробки.
+
+Bean-компонент RSocketRequester должен быть определен с использованием метода компоновщика или RSocketRequester. 
+
+Однако используемый метод зависит от версии загрузки Spring Boot. Метод RSocketRequester.create(), используемый в ранних версиях Spring Boot 2.2.0.M2, исчез :(
+
+Controller:
+
+    @RestController
+    @RequiredArgsConstructor
+    @RequestMapping("/api")
+    public class ClientController {
+        private final RSocketRequester requester;
+        @GetMapping("/movie/{id}")
+        Mono<Movie> findMovieById(@PathVariable String id) {
+            return this.requester
+                    .route("request-response")
+    //                .data(DefaultPayload.create(""))
+                    .data(new RequestMovie(id))
+                    .retrieveMono(Movie.class);
+        }
+        @GetMapping("/showAllMovies")
+        Flux<Movie> findAllMovies() {
+            return this.requester
+                    .route("request-stream")
+                    .retrieveFlux(Movie.class);
+        }
+        @PostMapping("/addMovie/{id}/{name}/{price}")
+        Mono<Void> addMovie(@PathVariable String id,
+                            @PathVariable String name,
+                            @PathVariable String price) {
+            return this.requester
+                    .route("fire-forget")
+                    .data(new Movie(id, name, price))
+                    .send();
+        }
+    }
+
+findMovieById: Объявите маршрут, определенный @MessageMapping на сервере RSocket, в .route(). 
+
+Если передается id фильма, выполняется поиск id фильма. Здесь клиент передает id фильма и возвращенные данные преобразуются в Mono<Movie> с использованием метода retrieveMono().
+
+showAllMovies: Клиенту должен  получить данные во FLux.
+
+addMovie: Метод send() возвращает Mono<Void>.
+
+
+---
+
+###WebSocket
+
+Давайте на скорую руку сделаем простую приложеньку client-server с использованием WebSocket.
+
+Клиент в 2 потока отправляет сообщеньки на сервер и сервер отвечает клиенту :) Красота!
+
+Поехали.
+
+Клиент:
+
+application.yml 
+
+    server:
+      port: 8081
+  
+И зафигачим все в одном классе для простоты (краткость - сестра таланта). 
+Это шутка, за такое по рукам можно получить :)
+
+    @SpringBootApplication
+    @Slf4j
+    public class WebsocketClientApplication {
+    
+       public static void main(String[] args) {
+          SpringApplication.run(WebsocketClientApplication.class, args);
+       }
+    
+       @Value("${app.client.url:http://localhost:8080/ws/test}")
+       private String serverURI;
+    
+    
+       Mono<Void> wsConnectNetty() {
+          WebSocketClient client = new ReactorNettyWebSocketClient();   
+          return client.execute(
+                URI.create(serverURI),  
+                session -> session
+                      .receive()
+                      .map(WebSocketMessage::getPayloadAsText)
+                      .take(8)
+                      .doOnNext(number ->
+                            log.info("Session id: " + session.getId() + " execute: " + number)
+                      )
+                      .flatMap(txt ->
+                            session.send(
+                                  Mono.just(session.textMessage(txt))
+                            )
+                      )
+                      .doOnSubscribe(subscriber ->
+                            log.info("Session id: " + session.getId() + " open connection")
+                      )
+                      .doFinally(signalType -> {
+                         session.close();
+                         log.info("Session id: " + session.getId() + " close connection");
+                      })
+                      .then()
+          );
+       }
+    
+       // для тестов
+       @Bean
+       ApplicationRunner appRunner() {
+          return args -> {
+             final CountDownLatch latch = new CountDownLatch(2);
+             Flux.merge(
+                   Flux.range(0, 2)
+                         .subscribeOn(Schedulers.single())
+                         .map(n -> wsConnectNetty()
+                               .doOnTerminate(latch::countDown))
+                         .parallel()
+             )
+                   .subscribe();
+    
+             latch.await(20, TimeUnit.SECONDS);
+          };
+       }
+    
+    }
+
+ReactorNettyWebSocketClient - это реализация WebSocketClient для использования с Reactor Netty.
+
+Здесь
+
+    URI.create(serverURI)
+
+происходит подключение клиента к серверу WebSocket через URL-адрес: как только он подключается к серверу - устанавливает сеанс между ними.
+
+Метод receive() получает поток входящих сообщений, которые впоследствии преобразуются в строки.
+
+Сервер:
+
+    @Component
+    @Slf4j
+    public class MyWebSocketHandler {
+    
+        @Bean
+        WebSocketHandlerAdapter webSocketHandlerAdapter() {
+            return new WebSocketHandlerAdapter();
+        }
+    
+        WebSocketHandler webSocketHandler() {
+            return session ->
+                    session.send(
+                            Flux.interval(Duration.ofSeconds(1))
+                                    .map(Object::toString)   
+                                    .map(session::textMessage)
+                    ).and(session.receive()   
+                            .map(WebSocketMessage::getPayloadAsText)   
+                            .doOnNext(msg -> log.info("Result: " + msg))
+                    );
+        }
+    
+        @Bean
+        HandlerMapping webSocketURLMapping() {
+            SimpleUrlHandlerMapping mapping = new SimpleUrlHandlerMapping();
+            mapping.setUrlMap(Collections.singletonMap("/ws/test", webSocketHandler()));
+            mapping.setCorsConfigurations(Collections.singletonMap("*", new CorsConfiguration().applyPermitDefaultValues()));  // for CORS
+            mapping.setOrder(Ordered.HIGHEST_PRECEDENCE);
+            return mapping;
+        }
+    
+    }
+
+Здесь бин
+
+    webSocketHandlerAdapter()
+
+для обработки "рукопожатия" через WebSocket, обновления и других деталей подключения.
+
+Метод map "превращает" его в текстовое сообщение для отправки обратно клиенту.
+
+Это приведет к потоку, который передается в качестве аргумента методу session.send(), который передается пользователю.
+
+    .map(Object::toString)
+
+Это аналог
+
+    n -> n.toString()
+
+Затем вызывается метод session.receive(), который возвращает поток сообщений веб-сокета.
+
+Поток отображается через метод WebsocketMessage::getPayloadAsText, который дает нам сообщение полезной нагрузки.
+
+
+
+Также здесь вы сможете найти другие примеры (например пользователь указывает свой адрес электронной почты и затем почта будет сохранена в БД и отображается на UI, реактивный сетевой чат, и простое взаимодействие клиент-сервера с помощью WebSocket) взаимодействия с WebSocket, как с помощью реактивного стиля так и нет.
+https://github.com/ksereda/WebSocket
